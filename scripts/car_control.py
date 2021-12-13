@@ -39,6 +39,8 @@ class Car:
         # extra
         self.eVPrev = 0.0
         self.lastWaypoint = carla.Location()
+        self.waypointError = 0.0
+        self.speed = 0.0
 
         # vehicle control
         self.throttle = 0.0
@@ -46,10 +48,11 @@ class Car:
         self.brake    = 0.0
         
         # controller parameters
-        self.kpStanley = 1.0
-        self.kdStanley = 0.8
-        self.kStanley  = 1.0
-        self.ksStanley = 0.2
+        self.kp         = 1.0
+        self.kd         = 0.8
+        self.kStanley   = 1.0
+        self.ksStanley  = 0.2
+        self.k2Feedback = 0.2
     
     def delete(self):
 
@@ -80,6 +83,9 @@ class Car:
         self.transform    = self._actor.get_transform()
         self.velocity     = self._actor.get_velocity()
 
+        self.speed         = np.linalg.norm((self.velocity.x, self.velocity.y))
+        self.waypointError =  np.linalg.norm((self.waypoint.x - self.location.x, self.waypoint.y - self.location.y))
+
     def applyControl(self, throttle = None, steer = None, brake = None):
 
         if throttle is None:
@@ -95,14 +101,13 @@ class Car:
 
         # speed control loop
         # determine speed error (m/s)
-        spd  = np.linalg.norm((self.velocity.x, self.velocity.y))
-        eV   = self.speedD - spd
+        eV   = self.speedD - self.speed
 
         eVdt = eV - self.eVPrev
         self.eVPrev = eV
 
         # throttle
-        u = self.kpStanley*eV + self.kdStanley*eVdt
+        u = self.kp*eV + self.kd*eVdt
 
         # lateral control loop
         # crosstrack error
@@ -120,10 +125,10 @@ class Car:
             e2 += 2*np.pi
 
         # steering angle
-        delta = (e2 + np.arctan2(self.kStanley*e1, self.ksStanley + spd))/self._MAXSTEERINGANGLE
+        delta = (e2 + np.arctan2(self.kStanley*e1, self.ksStanley + self.speed))/self._MAXSTEERINGANGLE
 
         # set control
-        self.steer    = min(max(delta, -1.0), 1.0)
+        self.steer = min(max(delta, -1.0), 1.0)
 
         if u >= 0.0:
             self.throttle = min(max(u, 0.0), 1.0)
@@ -133,15 +138,111 @@ class Car:
             self.brake    = min(max(-u, 0.0), 1.0)
         
         # DEBUG
-        # err = np.linalg.norm((self.waypoint.x - self.location.x, self.waypoint.y - self.location.y))
         # print('steer:')
         # print(self.steer)
         # print('waypoint error (m):')
-        # print(err)
+        # print(self.waypointError)
         # print('crosstrack error (e1, m):')
         # print(e1)
         # print('orientation error (e2, rad):')
         # print(e2)
+        # print
+    
+    def spinControlLoopFeedback(self):
+
+        # system parameters
+        m = 2325
+        Iz = 4132
+        wb = 3.025
+        lf = 1.430
+        lr = wb - lf
+        cf = 80000
+        cr = 96000
+
+        # speed control loop
+        # modify desired speed based on distance to waypoint
+        # slow down to 0.6*self.speedD before goal
+        buffer = 15.0
+        cornerSpeed = 20.0
+        if self.waypointError > buffer:
+            spd = self.speedD
+        else:
+            spd = (self.speedD - cornerSpeed)*(self.waypointError/buffer) + cornerSpeed
+
+        # determine speed error (m/s)
+        eV   = spd - self.speed
+
+        eVdt = eV - self.eVPrev
+        self.eVPrev = eV
+
+        # throttle
+        u = self.kp*eV + self.kd*eVdt
+
+        # lateral control loop
+        # dynamics
+        a11 = (cf + cr)/(m*self.speed)
+        a12 = -1 + (lf*cf - lr*cr)/(m*np.power(self.speed, 2))
+        a21 = (lf*cf - lr*cr)/Iz
+        a22 = (np.power(lf, 2)*cf + np.power(lr, 2)*cr)/(Iz*self.speed)
+        b11 = -cf/(m*self.speed)
+        b21 = -(lf*cf)/Iz
+
+        # crosstrack error
+        e = ((self.waypoint.x - self.lastWaypoint.x)*(self.lastWaypoint.y - self.location.y) - \
+            (self.lastWaypoint.x - self.location.x)*(self.waypoint.y - self.lastWaypoint.y)) / \
+            np.sqrt(np.power(self.waypoint.x - self.lastWaypoint.x, 2) + np.power(self.waypoint.y - self.lastWaypoint.y, 2))
+        
+        # orientation error
+        phi = np.arctan2(self.waypoint.y - self.lastWaypoint.y, self.waypoint.x - self.lastWaypoint.x) - np.deg2rad(self.transform.rotation.yaw)
+
+        # side slip angle
+        beta = np.arctan2(self.velocity.y, self.velocity.x) - np.deg2rad(self.transform.rotation.yaw)
+
+        # account for full rotations
+        if beta >= np.pi:
+            beta -= 2*np.pi
+        elif beta <= -np.pi:
+            beta += 2*np.pi
+
+        # yaw velocity
+        r = np.deg2rad(self.transform.rotation.yaw - self.transformP.rotation.yaw)
+
+        # prediction distance (m)
+        xp = 8.0
+
+        # projected error
+        ep = e + xp*np.sin(phi)
+
+        # feedforward steer angle
+        dffw = (-self.speed*r - xp*a21*beta - xp*a22*r)/(xp*b21)
+
+        # feedback steer angle
+        dfb = self.k2Feedback*ep
+
+        # steering angle
+        delta = (dffw + dfb)/self._MAXSTEERINGANGLE
+
+        # set control
+        self.steer = min(max(delta, -1.0), 1.0)
+
+        if u >= 0.0:
+            self.throttle = min(max(u, 0.0), 1.0)
+            self.brake    = 0.0
+        else:
+            self.throttle = 0.0
+            self.brake    = min(max(-u, 0.0), 1.0)
+        
+        # DEBUG
+        # print('steer:')
+        # print(self.steer)
+        # print('waypoint error (m):')
+        # print(self.waypointError)
+        # print('side slip angle:')
+        # print(beta)
+        # print('feedforward:')
+        # print(dffw)
+        # print('feedback')
+        # print(dfb)
         # print
 
     def isNearWaypoint(self, tolerance = 3.0):
@@ -166,23 +267,24 @@ class Car:
         print('acceleration (m/s^2):')
         print(acc)
 
-        spd = np.linalg.norm((self.velocity.x, self.velocity.y))
         print('speed (m/s):')
-        print(spd)
+        print(self.speed)
 
         print('location (m):')
         print(self.location)
 
-        err = np.linalg.norm((self.waypoint.x - self.location.x, self.waypoint.y - self.location.y))
         print('waypoint error (m):')
-        print(err)
+        print(self.waypointError)
 
         print('heading (deg):')
         print(self.transform.rotation.yaw)
         print
 
 
-def main(showPlot=True):
+def main(controllerType=1, showPlot=True):
+
+    # controllerType 1: Stanley
+    #                2: Feedback
 
     # list of waypoints (x, y) (m)
     waypoints = [(-6.4, -79.1), \
@@ -245,7 +347,15 @@ def main(showPlot=True):
     # set up waypoint following
     vehicle.setWaypoint(waypoints[nextWaypoint])
     vehicle.setPrevWaypoint(waypoints[0])
-    vehicle.setSpeed(11.176)
+
+    # set desired speed based on controller type
+    if controllerType == 1:
+        vehicle.setSpeed(11.176) # 25mph
+    elif controllerType == 2:
+        vehicle.setSpeed(17.882) # 40mph
+    else:
+        print('invalid argument: controllerType')
+        sys.exit()
 
     if showPlot:
         fig = plt.figure()
@@ -270,6 +380,8 @@ def main(showPlot=True):
 
     # desired frequency
     freq = 10.0
+
+    start = time.time()
 
     try:
         while True:
@@ -296,7 +408,12 @@ def main(showPlot=True):
 
             # do control
             vehicle.updatePhysicalState()
-            vehicle.spinControlLoopStanley()
+
+            if controllerType == 1:
+                vehicle.spinControlLoopStanley()
+            elif controllerType == 2:
+                vehicle.spinControlLoopFeedback()
+            
             vehicle.applyControl()
             # vehicle.printInfo()
 
@@ -341,14 +458,30 @@ def main(showPlot=True):
             ax.draw_artist(car)
             fig.canvas.blit(ax.bbox)
 
+        stop = time.time()
+        lapTime = stop - start
+
         # stop vehicle
-        vehicle.applyControl(0.0, 0.0, 0.5)
+        vehicle.applyControl(0.0, 0.0, 0.8)
         time.sleep(3)
     
     finally:
         print('Circuit complete')
+        print('Lap time: ' + str(lapTime) + 's')
         vehicle.delete()
 
 if __name__ == '__main__':
+
+    if len(sys.argv) > 1:
+        if int(sys.argv[1]) != 1 and int(sys.argv[1]) != 2:
+            print('invalid argument: ' + sys.argv[1])
+            print('1: Stanley controller')
+            print('2: Feedback controller')
+            sys.exit()
+        else:
+            arg = int(sys.argv[1])
     
-    main()
+    else:
+        arg = 1
+    
+    main(arg)
