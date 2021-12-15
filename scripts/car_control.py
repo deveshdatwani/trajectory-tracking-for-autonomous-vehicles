@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 
+from audioop import cross
 import carla
 import time
 import sys
@@ -38,6 +39,7 @@ class Car:
         self.eVPrev = 0.0
         self.lastWaypoint = carla.Location()
         self.waypointError = 0.0
+        self.crosstrackError = 0.0
         self.speed = 0.0
 
         # vehicle control
@@ -134,6 +136,9 @@ class Car:
         else:
             self.throttle = 0.0
             self.brake    = min(max(-u, 0.0), 1.0)
+
+        # save other data
+        self.crosstrackError = e1
         
         # DEBUG
         # print('steer:')
@@ -229,6 +234,9 @@ class Car:
         else:
             self.throttle = 0.0
             self.brake    = min(max(-u, 0.0), 1.0)
+
+        # save other data
+        self.crosstrackError = e
         
         # DEBUG
         # print('steer:')
@@ -330,10 +338,12 @@ def main(controllerType=1, showPlot=True):
     pathY = []
 
     # save control input
-    t        = []
-    throttle = []
-    brake    = []
-    steering = []
+    t          = []
+    throttle   = []
+    brake      = []
+    steering   = []
+    speed      = []
+    crosstrack = []
 
     # create client
     client = carla.Client('localhost', 2000)
@@ -437,6 +447,8 @@ def main(controllerType=1, showPlot=True):
             throttle.append(vehicle.throttle)
             brake.append(-vehicle.brake)
             steering.append(vehicle.steer*np.rad2deg(vehicle._MAXSTEERINGANGLE))
+            speed.append(vehicle.speed)
+            crosstrack.append(vehicle.crosstrackError)
 
             # save vehicle location
             pathX.append(-vehicle.location.x)
@@ -502,8 +514,24 @@ def main(controllerType=1, showPlot=True):
         axSteering.set_ylabel('Steering Angle (deg)')
         axSteering.plot(t, steering)
 
+        figSpeed = plt.figure()
+        axSpeed  = figSpeed.add_subplot(111)
+        axSpeed.set_title('Speed - ' + controller)
+        axSpeed.set_xlabel('time')
+        axSpeed.set_ylabel('Speed (m/s')
+        axSpeed.plot(t, speed)
+
+        figCrosstrack = plt.figure()
+        axCrosstrack  = figCrosstrack.add_subplot(111)
+        axCrosstrack.set_title('Path Deviation - ' + controller)
+        axCrosstrack.set_xlabel('time')
+        axCrosstrack.set_ylabel('Crosstrack Error (m)')
+        axCrosstrack.plot(t, crosstrack)
+
         figThrottle.show()
         figSteering.show()
+        figSpeed.show()
+        figCrosstrack.show()
 
         raw_input('Press any key to exit...')
     
