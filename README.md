@@ -39,3 +39,9 @@ as it drives through each subsequent waypoint.
 The user will be prompted by the terminal to `press any key` to start the control
 demonstration at the beginning and also at the end after all the plots have been
 displayed.
+
+## Demonstration videos
+
+Stanley Control: https://youtu.be/6bmxXV-_WTk
+
+Linear Feedback Control: https://youtu.be/6x-9eYSEKSo
