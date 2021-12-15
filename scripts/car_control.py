@@ -1,6 +1,5 @@
 #!/usr/bin/env python2
 
-from audioop import cross
 import carla
 import time
 import sys
@@ -398,6 +397,7 @@ def main(controllerType=1, showPlot=True):
         car, = ax.plot(-vehicle.location.x, vehicle.location.y, 'o', c='r')
 
     # start control
+    raw_input('Press any key to start...')
     print('Starting control')
     print('Waypoint 1')
     print(waypoints[nextWaypoint])

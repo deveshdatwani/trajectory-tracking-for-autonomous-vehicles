@@ -8,7 +8,8 @@ Stanley controller or a linear feedback controller. These options can be
 specified as arguments in the terminal when running the script.
 
 ## Setup
-Install carla version 0.9.10
+Install carla version 0.9.10 (this is the latest version that worked on the
+machine used for development)
 
 https://carla.readthedocs.io/en/0.9.10/start_quickstart/
 
@@ -34,3 +35,7 @@ This will spawn a vehicle in the simulation and drive it in a circuit around the
 world using the selected controller (Stanley: 1 or Linear Feedback: 2). A plot
 window will also pop up to show the desired path and actual path the vehicle takes
 as it drives through each subsequent waypoint.
+
+The user will be prompted by the terminal to `press any key` to start the control
+demonstration at the beginning and also at the end after all the plots have been
+displayed.
