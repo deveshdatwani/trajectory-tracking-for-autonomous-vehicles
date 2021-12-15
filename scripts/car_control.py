@@ -1,7 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
-from tkinter import E
-from xmlrpc.client import NOT_WELLFORMED_ERROR
 import carla
 import time
 import sys
@@ -180,11 +178,11 @@ class Car:
 
         # lateral control loop
         # dynamics
-        a11 = (cf + cr)/(m*self.speed)
-        a12 = -1 + (lf*cf - lr*cr)/(m*np.power(self.speed, 2))
+        a11 = (cf + cr)/(m*self.speed)                                  if self.speed > 0 else 0
+        a12 = -1 + (lf*cf - lr*cr)/(m*np.power(self.speed, 2))          if self.speed > 0 else 0
         a21 = (lf*cf - lr*cr)/Iz
-        a22 = (np.power(lf, 2)*cf + np.power(lr, 2)*cr)/(Iz*self.speed)
-        b11 = -cf/(m*self.speed)
+        a22 = (np.power(lf, 2)*cf + np.power(lr, 2)*cr)/(Iz*self.speed) if self.speed > 0 else 0
+        b11 = -cf/(m*self.speed)                                        if self.speed > 0 else 0
         b21 = -(lf*cf)/Iz
 
         # crosstrack error
@@ -331,6 +329,12 @@ def main(controllerType=1, showPlot=True):
     pathX = []
     pathY = []
 
+    # save control input
+    t        = []
+    throttle = []
+    brake    = []
+    steering = []
+
     # create client
     client = carla.Client('localhost', 2000)
     client.set_timeout(2.0)
@@ -351,8 +355,16 @@ def main(controllerType=1, showPlot=True):
     # set desired speed based on controller type
     if controllerType == 1:
         vehicle.setSpeed(11.176) # 25mph
+        print('Using Stanley controller at 25mph\n')
+
+        controller = 'Stanley'
+
     elif controllerType == 2:
         vehicle.setSpeed(17.882) # 40mph
+        print('Using linear feedback controller at 40mph\n')
+
+        controller = 'Linear Feedback'
+
     else:
         print('invalid argument: controllerType')
         sys.exit()
@@ -360,23 +372,26 @@ def main(controllerType=1, showPlot=True):
     if showPlot:
         fig = plt.figure()
         ax  = fig.add_subplot(111)
+        ax.set_title('Vehicle Path - ' + controller)
 
         xw = [-p[0] for p in waypoints]
         yw = [p[1] for p in waypoints]
 
-        cir, = ax.plot(xw, yw, linewidth='8', c='k')
+        cir, = ax.plot(xw, yw, linewidth='2', c='k')
 
         plt.show(False)
         plt.draw()
         plotBG = fig.canvas.copy_from_bbox(ax.bbox)
 
-        pth, = ax.plot(pathX, pathY, c='r')
+        pth, = ax.plot(pathX, pathY, '--', c='r')
         wyp, = ax.plot(-vehicle.waypoint.x, vehicle.waypoint.y, '*', c='y')
         car, = ax.plot(-vehicle.location.x, vehicle.location.y, 'o', c='r')
 
     # start control
-    print('Starting control: waypoint 1')
+    print('Starting control')
+    print('Waypoint 1')
     print(waypoints[nextWaypoint])
+    print
 
     # desired frequency
     freq = 10.0
@@ -402,7 +417,7 @@ def main(controllerType=1, showPlot=True):
                     wyp.set_xdata(-vehicle.waypoint.x)
                     wyp.set_ydata(vehicle.waypoint.y)
 
-                print('Waypoint: ' + str(nextWaypoint))
+                print('Waypoint ' + str(nextWaypoint))
                 print(waypoints[nextWaypoint])
                 print
 
@@ -416,6 +431,12 @@ def main(controllerType=1, showPlot=True):
             
             vehicle.applyControl()
             # vehicle.printInfo()
+
+            # save data
+            t.append(time.time() - start)
+            throttle.append(vehicle.throttle)
+            brake.append(-vehicle.brake)
+            steering.append(vehicle.steer*np.rad2deg(vehicle._MAXSTEERINGANGLE))
 
             # save vehicle location
             pathX.append(-vehicle.location.x)
@@ -461,9 +482,30 @@ def main(controllerType=1, showPlot=True):
         stop = time.time()
         lapTime = stop - start
 
-        # stop vehicle
+        # stop vehicle and wait for user to quit
         vehicle.applyControl(0.0, 0.0, 0.8)
         time.sleep(3)
+
+        # show control input data
+        figThrottle = plt.figure()
+        axThrottle  = figThrottle.add_subplot(111)
+        axThrottle.set_title('Throttle Control - ' + controller)
+        axThrottle.set_xlabel('Time (s)')
+        axThrottle.set_ylabel('Throttle/Brake')
+        axThrottle.plot(t, throttle)
+        axThrottle.plot(t, brake)
+
+        figSteering = plt.figure()
+        axSteering  = figSteering.add_subplot(111)
+        axSteering.set_title('Steering Control - ' + controller)
+        axSteering.set_xlabel('Time (s)')
+        axSteering.set_ylabel('Steering Angle (deg)')
+        axSteering.plot(t, steering)
+
+        figThrottle.show()
+        figSteering.show()
+
+        raw_input('Press any key to exit...')
     
     finally:
         print('Circuit complete')
