@@ -40,6 +40,10 @@ The user will be prompted by the terminal to `press any key` to start the contro
 demonstration at the beginning and also at the end after all the plots have been
 displayed.
 
+The manual-control script in the examples directory is a modified version of the
+example provided by the CARLA simulator install. It is modified to spawn the same
+vehicle at the same location as in the control demonstration script.
+
 ## Demonstration videos
 
 Stanley Control: https://youtu.be/6bmxXV-_WTk
