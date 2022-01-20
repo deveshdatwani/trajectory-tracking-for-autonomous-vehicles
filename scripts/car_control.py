@@ -138,18 +138,7 @@ class Car:
 
         # save other data
         self.crosstrackError = e1
-        
-        # DEBUG
-        # print('steer:')
-        # print(self.steer)
-        # print('waypoint error (m):')
-        # print(self.waypointError)
-        # print('crosstrack error (e1, m):')
-        # print(e1)
-        # print('orientation error (e2, rad):')
-        # print(e2)
-        # print
-    
+   
     def spinControlLoopFeedback(self):
 
         # system parameters
@@ -236,19 +225,6 @@ class Car:
 
         # save other data
         self.crosstrackError = e
-        
-        # DEBUG
-        # print('steer:')
-        # print(self.steer)
-        # print('waypoint error (m):')
-        # print(self.waypointError)
-        # print('side slip angle:')
-        # print(beta)
-        # print('feedforward:')
-        # print(dffw)
-        # print('feedback')
-        # print(dfb)
-        # print
 
     def isNearWaypoint(self, tolerance = 3.0):
 
